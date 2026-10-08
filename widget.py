@@ -13,8 +13,6 @@
 
 import logging
 import re
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from PySide2.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPlainTextEdit,
@@ -336,3 +334,4 @@ class NspdWidget(QWidget):
         if self._worker is not None:
             self._worker.cancel()
             self._worker.wait(5000)
+            
