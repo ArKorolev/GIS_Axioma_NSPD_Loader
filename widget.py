@@ -45,6 +45,9 @@ class Worker(QThread):
 
     def __init__(self, numbers):
         super().__init__()
+        # expected_category=None — автоопределение категории по ответу НСПД.
+        # Механизм expected_category/CATEGORY_FILTERS в nspd_client.query_nspd
+        # зарезервирован под будущий UI-селектор категории (не мёртвый код).
         self.processor = NspdProcessor(numbers, None)
 
     def cancel(self):
@@ -334,4 +337,3 @@ class NspdWidget(QWidget):
         if self._worker is not None:
             self._worker.cancel()
             self._worker.wait(5000)
-            
