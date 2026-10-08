@@ -104,17 +104,16 @@ class NspdProcessor:
         Returns:
             ProcessorResult — полная сводка (также self.result).
         """
-        # Регистрируем колбэк отмены в транспорте: паузы http_get
-        # (2 сек между запросами, 60 сек каждые 50) дробятся на 1-сек
-        # срезы и прерываются по кнопке «Отмена» в течение секунды.
-        from .nspd_transport import set_cancel_check
-        set_cancel_check(self.is_cancelled)
-
         total = len(self._numbers)
         self.result.total_requested = total
         done = 0
         blocked_count = 0   # счётчик подряд идущих 403
         t_start = time.monotonic()
+
+        # Регистрируем проверку отмены в транспорте: паузы антиблокировки
+        # (2 сек и 60 сек каждые 50 запросов) прерываются по cancel() за <=1 с.
+        from .nspd_transport import set_cancel_check
+        set_cancel_check(self.is_cancelled)
 
         def process_number(num):
             """Запрашивает один номер и относит результат в сводку.

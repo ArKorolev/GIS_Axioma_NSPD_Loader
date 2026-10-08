@@ -168,8 +168,8 @@ def _resolve_category(flat, expected_category=None):
     _, cat_id = resolve_category(category, category_name)
     if cat_id is None:
         logger.warning(
-            "Категория не распознана (category=%s, name='%s') — объекты записаны в таблицу ЗУ",
-            category, category_name
+            "Категория не распознана (category=%s, name=%r), объект отнесён к ЗУ",
+            category, category_name,
         )
         return CAT_LAND
     return cat_id
