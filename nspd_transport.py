@@ -35,6 +35,46 @@ _SSL_CTX.verify_mode = ssl.CERT_NONE
 _OPENER = None       # переиспользуемый opener (хранит cookie-сессию)
 _REQUEST_COUNT = 0   # счётчик запросов для противоабонентских пауз
 
+# Колбэк отмены (ставится бизнес-слоем через set_cancel_check): возвращает
+# True, если пользователь нажал «Отмена». Нужен, чтобы длинные паузы
+# (60 сек каждые 50 запросов) не блокировали отмену загрузки.
+_CANCEL_CHECK = None
+
+
+def set_cancel_check(func):
+    """Регистрирует колбэк is_cancelled() для прерывания пауз в http_get.
+
+    Вызывается из рабочего потока перед началом пакетной загрузки.
+    Передача через модульный регистр, а не параметр, сохраняет простую
+    сигнатуру http_get(url), которую категории получают как http_func.
+    """
+    global _CANCEL_CHECK
+    _CANCEL_CHECK = func
+
+
+def _interruptible_sleep(seconds):
+    """Сон с дроблением на 1-секундные slices и проверкой отмены.
+
+    Обычный time.sleep(60) не реагирует на «Отмену» пользователя: поток
+    спит полную минуту. Здесь каждые 1 сек опрашивается _CANCEL_CHECK;
+    при True сон прекращается досрочно (вызывающий цикл сам завершится
+    по флагу отмены). Без зарегистрированного колбэка — обычный sleep.
+    """
+    if _CANCEL_CHECK is None:
+        time.sleep(seconds)
+        return
+    end = time.monotonic() + seconds
+    while True:
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return
+        try:
+            if _CANCEL_CHECK():
+                return
+        except Exception:
+            return
+        time.sleep(min(1.0, remaining))
+
 
 def get_opener():
     """Возвращает singleton-opener; при первом вызове инициализирует сессию.
@@ -85,13 +125,14 @@ def http_get(url, timeout=30):
     global _REQUEST_COUNT
     _REQUEST_COUNT += 1
 
-    # Пауза 60 сек каждые 50 запросов
+    # Пауза 60 сек каждые 50 запросов (дробная, с проверкой отмены:
+    # «Отмена» пользователя прерывает сон в течение секунды)
     if _REQUEST_COUNT % 50 == 0:
         logger.info("Пауза 60 сек после %d запросов", _REQUEST_COUNT)
-        time.sleep(60)
+        _interruptible_sleep(60)
 
     # Задержка 2 сек между запросами
-    time.sleep(2)
+    _interruptible_sleep(2)
 
     opener = get_opener()
     try:
