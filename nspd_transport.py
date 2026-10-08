@@ -34,6 +34,7 @@ _SSL_CTX.verify_mode = ssl.CERT_NONE
 
 _OPENER = None       # переиспользуемый opener (хранит cookie-сессию)
 _REQUEST_COUNT = 0   # счётчик запросов для противоабонентских пауз
+_LAST_REQUEST_TIME = 0.0 # время последнего запроса (для авто-сброса счётчика)
 _CANCEL_CHECK = None  # callback is_cancelled() от процессора (см. set_cancel_check)
 
 
@@ -109,7 +110,14 @@ def http_get(url, timeout=30):
         (http_код, None) при HTTPError (403/404/5xx);
         (0, None) при сетевой ошибке/битом JSON.
     """
-    global _REQUEST_COUNT
+    global _REQUEST_COUNT, _LAST_REQUEST_TIME
+    # Если с последнего запроса прошло >60 сек — портал «забыл» нас,
+    # сбрасываем счётчик. Пауза 60 сек не сработает на первом запросе
+    # нового пакета, но при подряд идущих пакетах счётчик растёт и
+    # пауза срабатывает ровно каждые 50 запросов.
+    if time.monotonic() - _LAST_REQUEST_TIME > 60:
+        _REQUEST_COUNT = 0
+    _LAST_REQUEST_TIME = time.monotonic()
     _REQUEST_COUNT += 1
 
     # Пауза 60 сек каждые 50 запросов (прерывается отменой)
