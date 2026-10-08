@@ -166,7 +166,13 @@ def _resolve_category(flat, expected_category=None):
     category = first.get("category")
     category_name = safe_str(first.get("category_name", ""))
     _, cat_id = resolve_category(category, category_name)
-    return cat_id if cat_id is not None else CAT_LAND
+    if cat_id is None:
+        logger.warning(
+            "Категория не распознана (category=%s, name=%r), объект отнесён к ЗУ",
+            category, category_name,
+        )
+        return CAT_LAND
+    return cat_id
 
 
 def _get_existing_cad_nums(table, column_name="Кадастровый_номер"):
