@@ -386,36 +386,44 @@ def append_to_table(results, table, expected_category=None):
     return added, skipped
 
 
+def _is_nonearth_view(view):
+    """True, если окно карты существует и имеет плоскую (NonEarth) проекцию."""
+    if view is None or not isinstance(view, MapView):
+        return False
+    try:
+        cs = view.coordsystem
+        return cs is not None and cs.non_earth
+    except Exception:
+        return False
+
+
 def _open_views_single_map(new_tables):
     """Открывает вновь созданные таблицы слоями на карте.
 
-    Выбор окна карты: если активной карты нет или она в плоской проекции
-    (NonEarth — например локальная СК проекта), данные НСПД (глобальная
-    СК) недопустимо подмешивать в неё — создаётся новая карта. Иначе
-    слои добавляются в активную карту. Для каждого слоя применяется
-    цвет категории; чисто атрибутивные таблицы пропускаются.
+    Если активная карта — NonEarth (или нет активной карты), все слои
+    пакета открываются в одном новом окне. Иначе — добавляются в активную.
     """
     if not new_tables:
         return
 
-    # Проверяем CRS активного окна
-    use_new_map = False
+    need_new_map = False
     active_view = view_manager.active
     if active_view is None or not isinstance(active_view, MapView):
-        # Нет активной карты — нужна новая
-        use_new_map = True
+        need_new_map = True
     else:
         try:
             cs = active_view.coordsystem
             if cs is not None and cs.non_earth:
-                use_new_map = True
+                need_new_map = True
                 logger.info(
                     "Активная карта — NonEarth, данные будут открыты в новой карте"
                 )
         except Exception as e:
             logger.warning("Не удалось получить CRS активной карты: %s", e)
-            use_new_map = True
+            need_new_map = True
 
+    # Собираем все пространственные слои пакета
+    layers = []
     for table, cat_id in new_tables:
         try:
             if not table.is_spatial:
@@ -424,19 +432,36 @@ def _open_views_single_map(new_tables):
             style = _make_layer_style(cat_id)
             if style is not None:
                 layer.overrideStyle = style
-
-            if use_new_map:
-                view_manager.create_mapview(layer)
-                logger.info(
-                    "Слой добавлен в новую карту: %s",
-                    TABLE_NAMES.get(cat_id, "?")
-                )
-            else:
-                view_manager.add_to_current_mapview(layer)
-                logger.info(
-                    "Слой добавлен на активную карту: %s",
-                    TABLE_NAMES.get(cat_id, "?")
-                )
+            layers.append(layer)
+            logger.info("Слой подготовлен: %s", TABLE_NAMES.get(cat_id, "?"))
         except Exception as e:
             logger.error("Слой не создан: %s", e)
             traceback.print_exc()
+
+    if not layers:
+        return
+
+    if need_new_map:
+        # Все слои — в одно новое окно карты
+        target_view = view_manager.create_mapview(layers)
+        logger.info("Создана новая карта со %d слоями", len(layers))
+
+        if _is_nonearth_view(target_view):
+            try:
+                cs_new = _get_coordsystem()
+                if cs_new is not None:
+                    target_view.coordsystem = cs_new
+                else:
+                    target_view.coordsystem = CoordSystem.from_epsg(3857)
+                logger.info("Новая карта переведена в СК EPSG:3857")
+            except Exception as e:
+                logger.warning("Не удалось задать CRS новой карты: %s", e)
+    else:
+        # Каждый слой — в активную карту
+        for layer in layers:
+            try:
+                view_manager.add_to_current_mapview(layer)
+                logger.info("Слой добавлен на активную карту")
+            except Exception as e:
+                logger.error("Ошибка добавления слоя: %s", e)
+                traceback.print_exc()
