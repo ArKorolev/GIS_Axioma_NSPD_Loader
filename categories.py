@@ -34,7 +34,6 @@ import re
 import time
 
 from .nspd_utils import safe_str, safe_float, safe_int, fmt_date
-from .nspd_transport import http_get
 from .nspd_geometry import has_boundary_geometry, prepare_geometry
 
 logger = logging.getLogger("NSPD_Loader")
@@ -548,3 +547,4 @@ def resolve_category(category=None, category_name="", expected=None):
             if cd.recognize(None, category_name):
                 return cd, cd.CATEGORY_ID
     return None, None
+    
