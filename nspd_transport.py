@@ -34,6 +34,7 @@ _SSL_CTX.verify_mode = ssl.CERT_NONE
 
 _OPENER = None       # переиспользуемый opener (хранит cookie-сессию)
 _REQUEST_COUNT = 0   # счётчик запросов для противоабонентских пауз
+_CANCEL_CHECK = None  # callback is_cancelled() от процессора (см. set_cancel_check)
 
 
 def get_opener():
@@ -64,6 +65,32 @@ def get_opener():
 
     return _OPENER
 
+def _interruptible_sleep(seconds):
+    """Спит `seconds`, проверяя флаг отмены каждые 1 сек.
+
+    Если _CANCEL_CHECK не зарегистрирован или вернул False — спит полностью.
+    Нужен, чтобы «Отмена» в UI прерывала длинные rate-limit паузы,
+    а не ждала их окончания.
+    """
+    end = time.monotonic() + seconds
+    while True:
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return
+        if _CANCEL_CHECK is not None and _CANCEL_CHECK():
+            return
+        time.sleep(min(1.0, remaining))
+
+
+def set_cancel_check(fn):
+    """Регистрирует callback is_cancelled() для прерываемых пауз транспорта.
+
+    Вызывается из NspdProcessor.run() в начале пакета; передаётся метод
+    processor.is_cancelled. None — отключает проверку (паузы полные).
+    """
+    global _CANCEL_CHECK
+    _CANCEL_CHECK = fn
+
 
 def http_get(url, timeout=30):
     """HTTP GET с обязательными паузами и подсчётом запросов.
@@ -85,13 +112,13 @@ def http_get(url, timeout=30):
     global _REQUEST_COUNT
     _REQUEST_COUNT += 1
 
-    # Пауза 60 сек каждые 50 запросов
+    # Пауза 60 сек каждые 50 запросов (прерывается отменой)
     if _REQUEST_COUNT % 50 == 0:
         logger.info("Пауза 60 сек после %d запросов", _REQUEST_COUNT)
-        time.sleep(60)
+        _interruptible_sleep(60)
 
-    # Задержка 2 сек между запросами
-    time.sleep(2)
+    # Задержка 2 сек между запросами (прерывается отменой)
+    _interruptible_sleep(2)
 
     opener = get_opener()
     try:
